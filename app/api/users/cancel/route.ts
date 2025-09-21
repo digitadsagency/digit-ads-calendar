@@ -70,7 +70,7 @@ export async function POST(request: NextRequest) {
     // Obtener todas las reservas para encontrar la específica
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!A:M`,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!A:N`,
     });
 
     const rows = response.data.values || [];
@@ -87,7 +87,8 @@ export async function POST(request: NextRequest) {
 
     const reservation = rows[reservationRowIndex];
     const reservationDate = reservation[2]; // fecha
-    const currentStatus = reservation[9]; // estado
+    // Para reservas nuevas (14 columnas), el estado está en row[10], para antiguas (13 columnas) en row[9]
+    const currentStatus = reservation.length >= 14 ? reservation[10] : reservation[9];
 
     console.log('🔍 Verificando estado de reserva:', {
       reservationId,
@@ -118,9 +119,15 @@ export async function POST(request: NextRequest) {
 
     // Actualizar el estado a cancelada
     // reservationRowIndex es el índice en el array (0-based), pero Google Sheets usa 1-based
-    // Como obtenemos desde A:M (incluye header), necesitamos +1 para la fila correcta
+    // Como obtenemos desde A:N (incluye header), necesitamos +1 para la fila correcta
     const actualRowIndex = reservationRowIndex + 1;
     const now = new Date().toISOString();
+    
+    // Determinar la columna correcta para el estado
+    // Para reservas nuevas (14 columnas), el estado está en columna K (11), para antiguas (13 columnas) en columna J (10)
+    const estadoColumn = reservation.length >= 14 ? 'K' : 'J';
+    // Para reservas nuevas (14 columnas), la fecha de actualización está en columna N (14), para antiguas (13 columnas) en columna M (13)
+    const actualizadoColumn = reservation.length >= 14 ? 'N' : 'M';
     
     console.log('Actualizando reserva:', {
       reservationId,
@@ -128,12 +135,15 @@ export async function POST(request: NextRequest) {
       reservationRowIndex,
       actualRowIndex,
       currentStatus,
-      newStatus: 'cancelada'
+      newStatus: 'cancelada',
+      estadoColumn,
+      actualizadoColumn,
+      rowLength: reservation.length
     });
     
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!J${actualRowIndex}:J${actualRowIndex}`,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!${estadoColumn}${actualRowIndex}:${estadoColumn}${actualRowIndex}`,
       valueInputOption: 'RAW',
       requestBody: {
         values: [['cancelada']], // Solo cambiar el estado
@@ -143,7 +153,7 @@ export async function POST(request: NextRequest) {
     // Actualizar también la fecha de actualización
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!M${actualRowIndex}:M${actualRowIndex}`,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!${actualizadoColumn}${actualRowIndex}:${actualizadoColumn}${actualRowIndex}`,
       valueInputOption: 'RAW',
       requestBody: {
         values: [[now]], // Solo actualizar la fecha de modificación

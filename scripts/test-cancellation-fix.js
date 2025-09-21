@@ -1,181 +1,151 @@
 const { google } = require('googleapis');
 require('dotenv').config({ path: '.env.local' });
 
-const SHEETS_API_VERSION = 'v4';
-const USERS_SHEET_NAME = 'usuarios';
-const USER_RESERVATIONS_SHEET_NAME = 'reservas_usuarios';
-
-// Configuración de Google Sheets
-function getSheetsClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-
-  return google.sheets({ version: SHEETS_API_VERSION, auth });
+// Simular la función getAuthenticatedUser
+async function getAuthenticatedUser() {
+  return {
+    userId: 'USR-CE17A2',
+    email: 'test@example.com'
+  };
 }
 
-// Función para generar ID único
-function generateUserId() {
-  const randomString = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `USR-${randomString}`;
-}
-
-// Crear datos de prueba simples
-async function createTestData() {
+async function testCancellationFix() {
   try {
-    console.log('🧪 Creando datos de prueba para verificar la corrección...');
+    console.log('🧪 Probando el sistema de cancelación arreglado...');
+    
+    const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const USER_RESERVATIONS_SHEET_NAME = 'reservas_usuarios';
 
-    if (!process.env.GOOGLE_SHEETS_SPREADSHEET_ID) {
-      console.log('❌ Google Sheets no configurado');
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+
+    // Simular el endpoint de cancelación
+    const user = await getAuthenticatedUser();
+    const reservationId = 'DIG-1E39EB'; // Reserva del 24 de septiembre (futura)
+    
+    console.log(`🔍 Intentando cancelar reserva: ${reservationId} para usuario: ${user.userId}`);
+
+    // Obtener todas las reservas para encontrar la específica
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!A:N`,
+    });
+
+    const rows = response.data.values || [];
+    const reservationRowIndex = rows.findIndex(row => 
+      row.length >= 13 && row[0] === reservationId && row[1] === user.userId
+    );
+
+    if (reservationRowIndex === -1) {
+      console.log('❌ Reserva no encontrada');
       return;
     }
 
-    const sheets = getSheetsClient();
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    const reservation = rows[reservationRowIndex];
+    const reservationDate = reservation[2];
+    const currentStatus = reservation.length >= 14 ? reservation[10] : reservation[9];
 
-    // Limpiar datos anteriores
-    console.log('🧹 Limpiando datos anteriores...');
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!A:M`,
-    });
-
-    // Escribir headers
-    const headers = [
-      'id', 'userId', 'fecha', 'bloque', 'cliente_nombre', 'empresa_marca',
-      'direccion_grabacion', 'whatsapp', 'notas', 'estado', 'codigo_reserva',
-      'creado_en', 'actualizado_en'
-    ];
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!A1:M1`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [headers],
-      },
-    });
-
-    // Crear usuario de prueba
-    const testUser = {
-      email: 'fix.test@test.com',
-      password: 'test123',
-      name: 'Usuario Fix Test',
-      company: 'Test Company',
-      monthlyLimit: 2,
-      whatsapp: '+52 55 0000 0000',
-    };
-
-    const userId = generateUserId();
-    const now = new Date().toISOString();
-    
-    const userRow = [
-      userId,
-      testUser.email,
-      testUser.password,
-      testUser.name,
-      testUser.company,
-      testUser.monthlyLimit,
-      testUser.whatsapp,
-      now,
-      '', // last_login vacío
-      true, // is_active
-    ];
-
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${USERS_SHEET_NAME}!A:J`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [userRow],
-      },
-    });
-
-    console.log('✅ Usuario creado:', testUser.email);
-
-    // Crear reserva de prueba
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const reservationDate = tomorrow.toISOString().split('T')[0];
-    const reservationId = `DIG-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-    
-    const reservationRow = [
+    console.log('🔍 Estado actual de la reserva:', {
       reservationId,
-      userId,
+      userId: user.userId,
+      currentStatus,
       reservationDate,
-      'Mañana',
-      testUser.name,
-      testUser.company,
-      'Dirección de prueba',
-      testUser.whatsapp,
-      'Reserva de prueba para verificar corrección',
-      'confirmada',
-      reservationId,
-      now,
-      now,
-    ];
+      rowLength: reservation.length
+    });
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!A:M`,
+    // Verificar si ya está cancelada
+    if (currentStatus === 'cancelada') {
+      console.log('❌ Reserva ya cancelada');
+      return;
+    }
+
+    // Verificar si se puede cancelar (24 horas antes)
+    const now = new Date();
+    const reservationDateTime = new Date(reservationDate + 'T00:00:00');
+    const diffInHours = (reservationDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
+    
+    console.log(`⏰ Diferencia en horas: ${diffInHours.toFixed(2)}`);
+    
+    if (diffInHours < 24) {
+      console.log('❌ No se puede cancelar - menos de 24 horas de anticipación');
+      return;
+    }
+
+    console.log('✅ Se puede cancelar - procediendo...');
+
+    // Actualizar el estado a cancelada
+    const actualRowIndex = reservationRowIndex + 1;
+    const nowISO = new Date().toISOString();
+    
+    // Determinar la columna correcta para el estado
+    const estadoColumn = reservation.length >= 14 ? 'K' : 'J';
+    const actualizadoColumn = reservation.length >= 14 ? 'N' : 'M';
+    
+    console.log('🔧 Actualizando reserva:', {
+      actualRowIndex,
+      estadoColumn,
+      actualizadoColumn,
+      newStatus: 'cancelada'
+    });
+    
+    // Actualizar estado
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!${estadoColumn}${actualRowIndex}:${estadoColumn}${actualRowIndex}`,
       valueInputOption: 'RAW',
       requestBody: {
-        values: [reservationRow],
+        values: [['cancelada']],
       },
     });
 
-    console.log(`✅ Reserva creada: ${reservationId} - ${reservationDate} - Mañana`);
+    // Actualizar fecha de modificación
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!${actualizadoColumn}${actualRowIndex}:${actualizadoColumn}${actualRowIndex}`,
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: [[nowISO]],
+      },
+    });
 
-    console.log('\n🎯 DATOS DE PRUEBA LISTOS');
-    console.log('==========================');
-    console.log(`📧 Usuario: ${testUser.email}`);
-    console.log(`🔑 Contraseña: ${testUser.password}`);
-    console.log(`🆔 ID de Usuario: ${userId}`);
-    console.log(`🆔 ID de Reserva: ${reservationId}`);
-    console.log(`📅 Fecha: ${reservationDate}`);
-    console.log(`⏰ Bloque: Mañana`);
-    console.log(`📊 Estado: confirmada`);
-    console.log('');
-    console.log('🔍 INSTRUCCIONES DE PRUEBA:');
-    console.log('');
-    console.log('1️⃣ VERIFICAR ESTADO INICIAL:');
-    console.log('   - Ve a http://localhost:3001/client');
-    console.log('   - Haz login con:', testUser.email, '/', testUser.password);
-    console.log('   - ✅ DEBERÍA: Ver 1 reserva con estado "confirmada"');
-    console.log('   - ✅ DEBERÍA: Ver "1/2 reservas este mes"');
-    console.log('');
-    console.log('2️⃣ CANCELAR RESERVA:');
-    console.log('   - Haz click en "Cancelar" en la reserva');
-    console.log('   - ✅ DEBERÍA: Ver mensaje de éxito');
-    console.log('   - ✅ DEBERÍA: La reserva cambiar a estado "cancelada"');
-    console.log('   - ✅ DEBERÍA: Ver "0/2 reservas este mes"');
-    console.log('');
-    console.log('3️⃣ VERIFICAR PERSISTENCIA:');
-    console.log('   - Ve al panel de admin: http://localhost:3001/admin');
-    console.log('   - ✅ DEBERÍA: Ver la reserva con estado "cancelada"');
-    console.log('   - Regresa al dashboard del usuario');
-    console.log('   - ✅ DEBERÍA: La reserva SIGA apareciendo como "cancelada"');
-    console.log('   - ✅ DEBERÍA: Seguir viendo "0/2 reservas este mes"');
-    console.log('');
-    console.log('4️⃣ VERIFICAR EN GOOGLE SHEETS:');
-    console.log('   - Abre Google Sheets');
-    console.log('   - Ve a la hoja "reservas_usuarios"');
-    console.log('   - ✅ DEBERÍA: Ver solo 1 fila (la reserva cancelada)');
-    console.log('   - ✅ DEBERÍA: La columna J (estado) debe decir "cancelada"');
-    console.log('   - ✅ NO DEBERÍA: Ver filas vacías o duplicadas');
+    console.log('✅ Reserva cancelada exitosamente');
+
+    // Verificar el resultado
+    const updatedResponse = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${USER_RESERVATIONS_SHEET_NAME}!A${actualRowIndex}:N${actualRowIndex}`,
+    });
+
+    const updatedRow = updatedResponse.data.values[0];
+    const newStatus = updatedRow.length >= 14 ? updatedRow[10] : updatedRow[9];
+    
+    console.log('📊 Resultado final:', {
+      reservationId,
+      newStatus,
+      updatedAt: updatedRow.length >= 14 ? updatedRow[13] : updatedRow[12]
+    });
+
+    if (newStatus === 'cancelada') {
+      console.log('🎉 ¡Cancelación exitosa!');
+    } else {
+      console.log('❌ Error en la cancelación');
+    }
 
   } catch (error) {
-    console.error('❌ Error creando datos de prueba:', error);
+    console.error('❌ Error:', error);
   }
 }
 
 // Ejecutar si se llama directamente
 if (require.main === module) {
-  createTestData();
+  testCancellationFix();
 }
 
-module.exports = { createTestData };
+module.exports = { testCancellationFix };
