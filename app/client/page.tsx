@@ -56,6 +56,11 @@ export default function ClientDashboard() {
   const [reservations, setReservations] = useState<UserReservation[]>([]);
   const [showBookingPanel, setShowBookingPanel] = useState(false);
   const [currentMonthReservations, setCurrentMonthReservations] = useState(0);
+  
+  // Debug: Log cuando cambie el contador
+  useEffect(() => {
+    console.log('🔧 Contador de reservas mensuales cambió a:', currentMonthReservations);
+  }, [currentMonthReservations]);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [cancellingReservation, setCancellingReservation] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState<{
@@ -127,6 +132,7 @@ export default function ClientDashboard() {
           confirmedThisMonth: currentMonthReservations.length,
           reservations: currentMonthReservations.map((r: UserReservation) => ({ id: r.id, fecha: r.fecha, estado: r.estado }))
         });
+        console.log('🔧 Estableciendo contador a:', currentMonthReservations.length);
         setCurrentMonthReservations(currentMonthReservations.length);
       } else {
         console.error('❌ Error en respuesta de reservas:', data);
@@ -255,10 +261,12 @@ export default function ClientDashboard() {
           block: selectedBlock,
           name: formData.name,
         });
+        // Guardar la fecha antes de resetear para verificar disponibilidad
+        const bookedDate = selectedDate;
         setSelectedDate('');
         setSelectedBlock(null);
         loadReservations();
-        await checkAvailability(selectedDate);
+        await checkAvailability(bookedDate);
       } else {
         // Mostrar mensaje específico para límite de reservas
         if (data.limitReached) {
