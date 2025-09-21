@@ -1,268 +1,204 @@
 const { google } = require('googleapis');
 require('dotenv').config({ path: '.env.local' });
 
-const SHEETS_API_VERSION = 'v4';
-const USERS_SHEET_NAME = 'usuarios';
-const USER_RESERVATIONS_SHEET_NAME = 'reservas_usuarios';
-const PUBLIC_RESERVATIONS_SHEET_NAME = 'reservas';
-
-// Configuración de Google Sheets
-function getSheetsClient() {
-  const auth = new google.auth.GoogleAuth({
-    credentials: {
-      client_email: process.env.GOOGLE_CLIENT_EMAIL,
-      private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    },
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-
-  return google.sheets({ version: SHEETS_API_VERSION, auth });
-}
-
-// Función para generar ID único
-function generateUserId() {
-  const randomString = Math.random().toString(36).substring(2, 8).toUpperCase();
-  return `USR-${randomString}`;
-}
-
-// Crear datos de prueba para el panel de admin
-async function createAdminTestData() {
+async function testAdminReservations() {
   try {
-    console.log('🧪 Creando datos de prueba para el panel de admin...');
-
-    if (!process.env.GOOGLE_SHEETS_SPREADSHEET_ID) {
-      console.log('❌ Google Sheets no configurado');
-      return;
-    }
-
-    const sheets = getSheetsClient();
-    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-
-    // Limpiar datos anteriores
-    console.log('🧹 Limpiando datos anteriores...');
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!A:M`,
-    });
-
-    await sheets.spreadsheets.values.clear({
-      spreadsheetId,
-      range: `${PUBLIC_RESERVATIONS_SHEET_NAME}!A:N`,
-    });
-
-    // Escribir headers
-    const userHeaders = [
-      'id', 'userId', 'fecha', 'bloque', 'cliente_nombre', 'empresa_marca',
-      'direccion_grabacion', 'whatsapp', 'notas', 'estado', 'codigo_reserva',
-      'creado_en', 'actualizado_en'
-    ];
-
-    const publicHeaders = [
-      'id', 'fecha', 'bloque', 'cliente_nombre', 'empresa_marca',
-      'direccion_grabacion', 'whatsapp', 'notas', 'estado', 'codigo_reserva',
-      'gcal_event_id_ph1', 'gcal_event_id_ph2', 'creado_en', 'actualizado_en'
-    ];
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${USER_RESERVATIONS_SHEET_NAME}!A1:M1`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [userHeaders],
-      },
-    });
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: `${PUBLIC_RESERVATIONS_SHEET_NAME}!A1:N1`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [publicHeaders],
-      },
-    });
-
-    // Crear usuario de prueba
-    const testUser = {
-      email: 'admin.test@test.com',
-      password: 'test123',
-      name: 'Usuario Admin Test',
-      company: 'Test Company',
-      monthlyLimit: 2,
-      whatsapp: '+52 55 0000 0000',
-    };
-
-    const userId = generateUserId();
-    const now = new Date().toISOString();
+    console.log('🔍 Verificando reservas para el panel de admin...');
     
-    const userRow = [
-      userId,
-      testUser.email,
-      testUser.password,
-      testUser.name,
-      testUser.company,
-      testUser.monthlyLimit,
-      testUser.whatsapp,
-      now,
-      '', // last_login vacío
-      true, // is_active
-    ];
+    const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
 
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: `${USERS_SHEET_NAME}!A:J`,
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [userRow],
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL,
+        private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
       },
+      scopes: ['https://www.googleapis.com/auth/spreadsheets'],
     });
 
-    console.log('✅ Usuario creado:', testUser.email);
+    const sheets = google.sheets({ version: 'v4', auth });
 
-    // Crear reservas de usuario
-    const today = new Date();
-    const nextWeek = new Date(today);
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    const nextMonth = new Date(today);
-    nextMonth.setDate(nextMonth.getDate() + 30);
-
-    const userReservations = [
-      {
-        date: nextWeek.toISOString().split('T')[0],
-        block: 'Mañana',
-        description: 'Reserva de usuario 1'
-      },
-      {
-        date: nextMonth.toISOString().split('T')[0],
-        block: 'Tarde',
-        description: 'Reserva de usuario 2'
-      }
-    ];
-
-    for (const reservation of userReservations) {
-      const reservationId = `DIG-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      
-      const reservationRow = [
-        reservationId,
-        userId,
-        reservation.date,
-        reservation.block,
-        testUser.name,
-        testUser.company,
-        'Dirección de prueba',
-        testUser.whatsapp,
-        reservation.description,
-        'confirmada',
-        reservationId,
-        now,
-        now,
-      ];
-
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `${USER_RESERVATIONS_SHEET_NAME}!A:M`,
-        valueInputOption: 'RAW',
-        requestBody: {
-          values: [reservationRow],
-        },
+    // 1. Verificar reservas públicas
+    console.log('\n1️⃣ Verificando reservas públicas (tabla "reservas")...');
+    try {
+      const publicResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'reservas!A:N',
       });
 
-      console.log(`✅ Reserva de usuario creada: ${reservation.date} - ${reservation.block}`);
+      const publicRows = publicResponse.data.values || [];
+      console.log(`📊 Total de filas en reservas públicas: ${publicRows.length}`);
+
+      publicRows.forEach((row, index) => {
+        console.log(`\n🔍 Fila ${index + 1} (reservas públicas):`);
+        console.log(`  Longitud: ${row.length}`);
+        console.log(`  Contenido:`, row);
+        
+        if (row.length >= 15) {
+          console.log(`  ✅ Fila válida (>= 15 columnas)`);
+          console.log(`  ID: ${row[0]}`);
+          console.log(`  Fecha: ${row[1]}`);
+          console.log(`  Bloque: ${row[2]}`);
+          console.log(`  Horario: ${row[3]}`);
+          console.log(`  Cliente: ${row[4]}`);
+          console.log(`  Estado: ${row[9]}`);
+          console.log(`  Código: ${row[10]}`);
+        } else {
+          console.log(`  ❌ Fila inválida (< 15 columnas)`);
+        }
+      });
+    } catch (error) {
+      console.log('❌ Error obteniendo reservas públicas:', error.message);
     }
 
-    // Crear reservas públicas
-    const publicReservations = [
-      {
-        date: nextWeek.toISOString().split('T')[0],
-        block: 'Tarde',
-        description: 'Reserva pública 1'
-      },
-      {
-        date: nextMonth.toISOString().split('T')[0],
-        block: 'Mañana',
-        description: 'Reserva pública 2'
-      }
-    ];
-
-    for (const reservation of publicReservations) {
-      const reservationId = `DIG-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-      
-      const reservationRow = [
-        reservationId,
-        reservation.date,
-        reservation.block,
-        'Cliente Público',
-        'Empresa Pública',
-        'Dirección pública',
-        '+52 55 0000 0000',
-        reservation.description,
-        'confirmada',
-        reservationId,
-        '', // gcal_event_id_ph1
-        '', // gcal_event_id_ph2
-        now,
-        now,
-      ];
-
-      await sheets.spreadsheets.values.append({
-        spreadsheetId,
-        range: `${PUBLIC_RESERVATIONS_SHEET_NAME}!A:N`,
-        valueInputOption: 'RAW',
-        requestBody: {
-          values: [reservationRow],
-        },
+    // 2. Verificar reservas de usuarios
+    console.log('\n2️⃣ Verificando reservas de usuarios (tabla "reservas_usuarios")...');
+    try {
+      const userResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'reservas_usuarios!A:N',
       });
 
-      console.log(`✅ Reserva pública creada: ${reservation.date} - ${reservation.block}`);
+      const userRows = userResponse.data.values || [];
+      console.log(`📊 Total de filas en reservas de usuarios: ${userRows.length}`);
+
+      userRows.forEach((row, index) => {
+        console.log(`\n🔍 Fila ${index + 1} (reservas usuarios):`);
+        console.log(`  Longitud: ${row.length}`);
+        console.log(`  Contenido:`, row);
+        
+        if (row.length >= 14) {
+          console.log(`  ✅ Fila válida (>= 14 columnas)`);
+          console.log(`  ID: ${row[0]}`);
+          console.log(`  UserID: ${row[1]}`);
+          console.log(`  Fecha: ${row[2]}`);
+          console.log(`  Bloque: ${row[3]}`);
+          console.log(`  Horario: ${row[4]}`);
+          console.log(`  Cliente: ${row[5]}`);
+          console.log(`  Estado: ${row[10]}`);
+          console.log(`  Código: ${row[11]}`);
+        } else {
+          console.log(`  ❌ Fila inválida (< 14 columnas)`);
+        }
+      });
+    } catch (error) {
+      console.log('❌ Error obteniendo reservas de usuarios:', error.message);
     }
 
-    console.log('');
-    console.log('🎯 Datos de prueba para admin listos:');
-    console.log(`📧 Usuario: ${testUser.email}`);
-    console.log(`🔑 Contraseña: ${testUser.password}`);
-    console.log(`📅 Límite: ${testUser.monthlyLimit} reservas/mes`);
-    console.log(`🆔 ID de Usuario: ${userId}`);
-    console.log('');
-    console.log('📊 Reservas creadas:');
-    console.log('   - 2 reservas de usuario (confirmadas)');
-    console.log('   - 2 reservas públicas (confirmadas)');
-    console.log('   - Total: 4 reservas para mostrar en admin');
-    console.log('');
-    console.log('🔍 INSTRUCCIONES DE PRUEBA:');
-    console.log('');
-    console.log('1️⃣ VERIFICAR PANEL DE ADMIN:');
-    console.log('   - Ve a http://localhost:3001/admin');
-    console.log('   - Haz login con las credenciales de admin');
-    console.log('   - ✅ DEBERÍA: Mostrar 4 reservas en total');
-    console.log('   - ✅ DEBERÍA: Mostrar estadísticas correctas');
-    console.log('   - ✅ DEBERÍA: Mostrar tabla con todas las reservas');
-    console.log('');
-    console.log('2️⃣ VERIFICAR ESTADÍSTICAS:');
-    console.log('   - Total Reservas: 4');
-    console.log('   - Confirmadas: 4');
-    console.log('   - Canceladas: 0');
-    console.log('');
-    console.log('3️⃣ VERIFICAR TABLA:');
-    console.log('   - ✅ DEBERÍA: Mostrar reservas de usuarios');
-    console.log('   - ✅ DEBERÍA: Mostrar reservas públicas');
-    console.log('   - ✅ DEBERÍA: Mostrar fechas, bloques, clientes');
-    console.log('   - ✅ DEBERÍA: Mostrar botones de cancelar');
-    console.log('');
-    console.log('4️⃣ VERIFICAR LOGS:');
-    console.log('   - Abre las herramientas de desarrollador (F12)');
-    console.log('   - Ve a la pestaña "Console"');
-    console.log('   - ✅ DEBERÍA ver:');
-    console.log('     * "📊 Total de reservas obtenidas: 4 (públicas + usuarios)"');
-    console.log('     * "📊 API Reservas - Todas las reservas: 4 reservas"');
-    console.log('     * Detalles de las 4 reservas');
+    // 3. Simular la lógica de getAllReservations
+    console.log('\n3️⃣ Simulando lógica de getAllReservations...');
+    
+    const allReservations = [];
+
+    // Procesar reservas públicas
+    try {
+      const publicResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'reservas!A2:N1000', // Sin header
+      });
+
+      const publicRows = publicResponse.data.values || [];
+      console.log(`📊 Procesando ${publicRows.length} filas de reservas públicas...`);
+
+      publicRows.forEach((row, index) => {
+        if (row.length >= 15 && 
+            row[0] && // id
+            row[1] && // fecha
+            row[2] && // bloque
+            row[4] && // cliente_nombre
+            row[9] && // estado
+            row[10]) { // codigo_reserva
+          
+          const reservation = {
+            id: row[0],
+            fecha: row[1],
+            bloque: row[2],
+            horario: row[3] || '',
+            cliente_nombre: row[4],
+            empresa_marca: row[5] || '',
+            direccion_grabacion: row[6] || '',
+            correo: row[7] || '',
+            notas: row[8] || '',
+            estado: row[9],
+            codigo_reserva: row[10],
+            gcal_event_id_ph1: row[11] || '',
+            gcal_event_id_ph2: row[12] || '',
+            creado_en: row[13] || '',
+            actualizado_en: row[14] || '',
+          };
+          
+          allReservations.push(reservation);
+          console.log(`  ✅ Reserva pública agregada: ${reservation.id} - ${reservation.fecha}`);
+        } else {
+          console.log(`  ❌ Fila ${index + 1} omitida - datos incompletos`);
+        }
+      });
+    } catch (error) {
+      console.log('❌ Error procesando reservas públicas:', error.message);
+    }
+
+    // Procesar reservas de usuarios
+    try {
+      const userResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: 'reservas_usuarios!A2:N1000', // Sin header
+      });
+
+      const userRows = userResponse.data.values || [];
+      console.log(`📊 Procesando ${userRows.length} filas de reservas de usuarios...`);
+
+      userRows.forEach((row, index) => {
+        if (row.length >= 14 && 
+            row[0] && // id
+            row[1] && // userId
+            row[2] && // fecha
+            row[3] && // bloque
+            row[5] && // cliente_nombre
+            row[10] && // estado
+            row[11]) { // codigo_reserva
+          
+          const reservation = {
+            id: row[0],
+            fecha: row[2],
+            bloque: row[3],
+            horario: row[4] || '',
+            cliente_nombre: row[5],
+            empresa_marca: row[6] || '',
+            direccion_grabacion: row[7] || '',
+            correo: row[8] || '',
+            notas: row[9] || '',
+            estado: row[10],
+            codigo_reserva: row[11],
+            gcal_event_id_ph1: '',
+            gcal_event_id_ph2: '',
+            creado_en: row[12] || '',
+            actualizado_en: row[13] || '',
+          };
+          
+          allReservations.push(reservation);
+          console.log(`  ✅ Reserva de usuario agregada: ${reservation.id} - ${reservation.fecha}`);
+        } else {
+          console.log(`  ❌ Fila ${index + 1} omitida - datos incompletos`);
+        }
+      });
+    } catch (error) {
+      console.log('❌ Error procesando reservas de usuarios:', error.message);
+    }
+
+    console.log(`\n📊 Resultado final:`);
+    console.log(`  Total de reservas encontradas: ${allReservations.length}`);
+    
+    allReservations.forEach((res, index) => {
+      console.log(`  ${index + 1}. ${res.id} - ${res.fecha} - ${res.bloque} - ${res.cliente_nombre} (${res.estado})`);
+    });
 
   } catch (error) {
-    console.error('❌ Error creando datos de prueba:', error);
+    console.error('❌ Error:', error);
   }
 }
 
 // Ejecutar si se llama directamente
 if (require.main === module) {
-  createAdminTestData();
+  testAdminReservations();
 }
 
-module.exports = { createAdminTestData };
+module.exports = { testAdminReservations };

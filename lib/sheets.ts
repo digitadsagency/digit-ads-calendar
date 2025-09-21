@@ -333,20 +333,24 @@ export async function getAllReservations(): Promise<Reservation[]> {
     try {
       const publicResponse = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: 'reservas!A2:N1000',
+        range: 'reservas!A2:O1000', // Cambiar a O para incluir actualizado_en
       });
 
       const publicRows = publicResponse.data.values || [];
-      publicRows.forEach((row) => {
+      console.log(`📊 Procesando ${publicRows.length} filas de reservas públicas...`);
+      
+      publicRows.forEach((row, index) => {
         // Solo procesar filas que tengan todos los datos esenciales
-        if (row.length >= 15 && 
+        // Para reservas públicas, necesitamos al menos 14 columnas (sin userId)
+        if (row.length >= 14 && 
             row[0] && // id
             row[1] && // fecha
             row[2] && // bloque
             row[4] && // cliente_nombre (ahora en posición 4)
             row[9] && // estado
             row[10]) { // codigo_reserva
-          allReservations.push({
+          
+          const reservation = {
             id: row[0],
             fecha: row[1],
             bloque: row[2] as 'Mañana' | 'Tarde',
@@ -362,7 +366,12 @@ export async function getAllReservations(): Promise<Reservation[]> {
             gcal_event_id_ph2: row[12] || '',
             creado_en: row[13] || '',
             actualizado_en: row[14] || '',
-          });
+          };
+          
+          allReservations.push(reservation);
+          console.log(`  ✅ Reserva pública agregada: ${reservation.id} - ${reservation.fecha}`);
+        } else {
+          console.log(`  ❌ Fila ${index + 1} omitida - datos incompletos (longitud: ${row.length})`);
         }
       });
     } catch (error) {
@@ -373,11 +382,13 @@ export async function getAllReservations(): Promise<Reservation[]> {
     try {
       const userResponse = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: 'reservas_usuarios!A2:M1000',
+        range: 'reservas_usuarios!A2:N1000', // Cambiar a N para incluir todas las columnas
       });
 
       const userRows = userResponse.data.values || [];
-      userRows.forEach((row) => {
+      console.log(`📊 Procesando ${userRows.length} filas de reservas de usuarios...`);
+      
+      userRows.forEach((row, index) => {
         // Solo procesar filas que tengan todos los datos esenciales
         if (row.length >= 14 && 
             row[0] && // id
@@ -387,7 +398,8 @@ export async function getAllReservations(): Promise<Reservation[]> {
             row[5] && // cliente_nombre (ahora en posición 5)
             row[10] && // estado
             row[11]) { // codigo_reserva
-          allReservations.push({
+          
+          const reservation = {
             id: row[0],
             fecha: row[2],
             bloque: row[3] as 'Mañana' | 'Tarde',
@@ -403,7 +415,12 @@ export async function getAllReservations(): Promise<Reservation[]> {
             gcal_event_id_ph2: '', // No aplica para reservas de usuarios
             creado_en: row[12] || '',
             actualizado_en: row[13] || '',
-          });
+          };
+          
+          allReservations.push(reservation);
+          console.log(`  ✅ Reserva de usuario agregada: ${reservation.id} - ${reservation.fecha}`);
+        } else {
+          console.log(`  ❌ Fila ${index + 1} omitida - datos incompletos (longitud: ${row.length})`);
         }
       });
     } catch (error) {
