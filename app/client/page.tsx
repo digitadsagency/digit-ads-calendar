@@ -363,8 +363,11 @@ export default function ClientDashboard() {
           return updated;
         });
         
-        // NO recargar del servidor inmediatamente para evitar sobrescribir la actualización local
-        console.log('✅ Cancelación completada - manteniendo estado local actualizado');
+        // Recargar del servidor después de un pequeño delay para sincronizar
+        console.log('✅ Cancelación completada - recargando del servidor en 1 segundo...');
+        setTimeout(() => {
+          loadReservations();
+        }, 1000);
       } else {
         setAlert({
           type: 'error',
